@@ -1,4 +1,4 @@
-module github.com/dangars151/go-redis/v9
+module github.com/dangars151/go-redis
 
 go 1.18
 
