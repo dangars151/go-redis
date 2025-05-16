@@ -2,7 +2,9 @@ package redis
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -167,7 +169,18 @@ func (c *PubSub) closeTheCn(reason error) error {
 	if c.cn == nil {
 		return nil
 	}
-	if !c.closed {
+	/*
+		- Lỗi unexpected EOF xảy ra khi sử dụng hàm io.ReadFull để đọc dữ liệu từ redis ra
+		- Nếu có kí tự đặc biệt nào đó không đọc được, hàm io.ReadFull sẽ trả ra lỗi unexpected EOF
+		- Khi đó thì redis server sẽ đóng connection từ client vì nghĩ nó là bad PubSub connection
+		- Đóng lại để tránh việc bên publish liên tục gửi những gói tin độc hại khiến hàm io.ReadFull không đọc được
+		- Đối với TH này, các gói tin publish được gửi từ 1 hệ thống nội bộ khác nên không sợ bị gửi gói tin độc
+		-> có thể bỏ qua TH này vì đang sử dụng các hệ thống nội bộ để Pub Sub dữ liệu
+	*/
+	if errors.Is(reason, io.ErrUnexpectedEOF) {
+		return nil
+	}
+	if !c.closed && reason != io.EOF {
 		internal.Logger.Printf(c.getContext(), "redis: discarding bad PubSub connection: %s", reason)
 	}
 	err := c.closeConn(c.cn)
